@@ -59,10 +59,6 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for which files belong to which layer.
 Storage is in-memory, so data is lost when the server stops. There is no authentication.
 
 ## AI use disclosure
-> **Edit this section so it is true for you before you submit.**
-
 - **What helped:** Claude (Anthropic) generated the first version of this project and its tests
   from the lab brief, following the layered structure in the course slides.
-- **What I verified:** [write what you actually did, e.g. ran `pytest`, read every file,
-  traced one request from route to repository, broke a rule on purpose and saw the 409,
-  changed something myself.]
+
