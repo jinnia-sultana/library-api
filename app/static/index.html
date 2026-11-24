@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Library</title>
+<style>
+  :root { --ink:#1f2937; --muted:#6b7280; --line:#e5e7eb; --accent:#2563eb; --bad:#b91c1c; --ok:#047857; }
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, Segoe UI, sans-serif; color: var(--ink); max-width: 1000px; margin: 0 auto; padding: 24px 16px 60px; background:#fafafa; }
+  h1 { margin: 0 0 4px; font-size: 24px; }
+  .sub { color: var(--muted); margin: 0 0 16px; font-size: 14px; }
+  #msg { min-height: 44px; padding: 10px 12px; border-radius: 8px; margin-bottom: 16px; font-size: 14px; background:#fff; border:1px solid var(--line); color: var(--muted); }
+  #msg.error { background:#fef2f2; border-color:#fecaca; color: var(--bad); }
+  #msg.ok { background:#ecfdf5; border-color:#a7f3d0; color: var(--ok); }
+  .grid { display:grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
+  section { background:#fff; border:1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin-bottom: 16px; }
+  h2 { margin: 0 0 10px; font-size: 16px; }
+  form { display:flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+  input, select { padding: 7px 9px; border:1px solid #d1d5db; border-radius: 6px; font-size: 14px; flex: 1 1 140px; min-width: 0; }
+  button { padding: 7px 12px; border:0; border-radius: 6px; background: var(--accent); color:#fff; font-size: 14px; cursor:pointer; }
+  button.del { background:#fff; color: var(--bad); border:1px solid #fecaca; padding: 3px 8px; font-size: 12px; }
+  button.ret { background:#fff; color: var(--accent); border:1px solid #bfdbfe; padding: 3px 8px; font-size: 12px; }
+  table { width:100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align:left; padding: 6px 4px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .03em; }
+  .empty { color: var(--muted); font-size: 14px; padding: 6px 0; }
+  .tag { font-size: 12px; padding: 2px 7px; border-radius: 99px; }
+  .tag.on { background:#dbeafe; color:#1d4ed8; } .tag.done { background:#f3f4f6; color: var(--muted); }
+</style>
+</head>
+<body>
+<h1>Library</h1>
+<p class="sub">A small page that calls the REST API. Every button below is one API request.</p>
+<div id="msg" role="status">Ready.</div>
+
+<div class="grid">
+  <section>
+    <h2>Add a book</h2>
+    <form id="book-form">
+      <input name="title" placeholder="Title">
+      <input name="author" placeholder="Author">
+      <input name="isbn" placeholder="ISBN (10 or 13 digits)">
+      <input name="total_copies" type="number" min="1" placeholder="Copies">
+      <button>Add book</button>
+    </form>
+  </section>
+  <section>
+    <h2>Add a member</h2>
+    <form id="member-form">
+      <input name="name" placeholder="Name">
+      <input name="email" placeholder="Email">
+      <button>Add member</button>
+    </form>
+  </section>
+</div>
+
+<section>
+  <h2>Borrow a book</h2>
+  <form id="loan-form">
+    <select name="book_id" id="book-select"></select>
+    <select name="member_id" id="member-select"></select>
+    <button>Borrow</button>
+  </form>
+</section>
+
+<section><h2>Books</h2><div id="books"></div></section>
+<section><h2>Members</h2><div id="members"></div></section>
+<section><h2>Loans</h2><div id="loans"></div></section>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+function say(text, kind) {
+  const el = $('#msg');
+  el.textContent = text;
+  el.className = kind || '';
+}
+
+async function api(method, path, body) {
+  const res = await fetch(path, {
+    method,
+    headers: body ? { 'Content-Type': 'application/json' } : {},
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (res.status === 204) return null;
+  const data = await res.json();
+  if (!res.ok) {
+    const fields = (data.errors || []).map((e) => e.field + ': ' + e.message).join('; ');
+    throw new Error(res.status + ' ' + data.title + ' - ' + data.detail + (fields ? ' (' + fields + ')' : ''));
+  }
+  return data;
+}
+
+async function act(label, fn) {
+  try { await fn(); say(label + ' - success', 'ok'); }
+  catch (e) { say(e.message, 'error'); }
+  await refresh();
+}
+
+function table(headers, rows) {
+  if (!rows.length) return '<div class="empty">Nothing here yet.</div>';
+  return '<table><tr>' + headers.map((h) => '<th>' + h + '</th>').join('') + '</tr>' + rows.join('') + '</table>';
+}
+
+async function refresh() {
+  const [books, members, loans] = await Promise.all([api('GET', '/books'), api('GET', '/members'), api('GET', '/loans')]);
+  const bookName = Object.fromEntries(books.map((b) => [b.id, b.title]));
+  const memberName = Object.fromEntries(members.map((m) => [m.id, m.name]));
+
+  $('#books').innerHTML = table(['ID', 'Title', 'Author', 'ISBN', 'Available', ''],
+    books.map((b) => `<tr><td>${b.id}</td><td>${esc(b.title)}</td><td>${esc(b.author)}</td><td>${esc(b.isbn)}</td>
+      <td>${b.available_copies} / ${b.total_copies}</td><td><button class="del" onclick="removeItem('books', ${b.id})">Delete</button></td></tr>`));
+
+  $('#members').innerHTML = table(['ID', 'Name', 'Email', ''],
+    members.map((m) => `<tr><td>${m.id}</td><td>${esc(m.name)}</td><td>${esc(m.email)}</td>
+      <td><button class="del" onclick="removeItem('members', ${m.id})">Delete</button></td></tr>`));
+
+  $('#loans').innerHTML = table(['ID', 'Book', 'Member', 'Status', ''],
+    loans.map((l) => `<tr><td>${l.id}</td><td>${esc(bookName[l.book_id] || '#' + l.book_id)}</td><td>${esc(memberName[l.member_id] || '#' + l.member_id)}</td>
+      <td><span class="tag ${l.active ? 'on' : 'done'}">${l.active ? 'on loan' : 'returned'}</span></td>
+      <td>${l.active ? `<button class="ret" onclick="returnLoan(${l.id})">Return</button>` : ''}</td></tr>`));
+
+  $('#book-select').innerHTML = books.map((b) => `<option value="${b.id}">${esc(b.title)} (${b.available_copies} available)</option>`).join('') || '<option value="">No books</option>';
+  $('#member-select').innerHTML = members.map((m) => `<option value="${m.id}">${esc(m.name)}</option>`).join('') || '<option value="">No members</option>';
+}
+
+function removeItem(kind, id) { act('Delete ' + kind.slice(0, -1) + ' ' + id, () => api('DELETE', '/' + kind + '/' + id)); }
+function returnLoan(id) { act('Return loan ' + id, () => api('POST', '/loans/' + id + '/return')); }
+
+$('#book-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const copies = f.get('total_copies');
+  act('Add book', async () => {
+    await api('POST', '/books', {
+      title: f.get('title'), author: f.get('author'), isbn: f.get('isbn'),
+      total_copies: copies === '' ? null : Number(copies),
+    });
+    e.target.reset();
+  });
+});
+$('#member-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  act('Add member', async () => {
+    await api('POST', '/members', { name: f.get('name'), email: f.get('email') });
+    e.target.reset();
+  });
+});
+$('#loan-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const num = (v) => (v === '' || v === null ? null : Number(v));
+  act('Borrow', () => api('POST', '/loans', { book_id: num(f.get('book_id')), member_id: num(f.get('member_id')) }));
+});
+
+refresh().catch((e) => say(e.message, 'error'));
+</script>
+</body>
+</html>
